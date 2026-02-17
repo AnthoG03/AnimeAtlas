@@ -58,18 +58,18 @@ if st.session_state.page == 'home':
     with col_c1:
         with st.container(border=True):
             st.write("### 📚 Archivio Completo")
-            st.write("Tutti gli anime (Conclusi e storici).")
+            st.write("Esplora l'intero database globale.")
             if st.button("ACCEDI ALL'ARCHIVIO", use_container_width=True, type="primary"):
-                st.session_state.filter = "all" # Imposta filtro su tutto
+                st.session_state.filter = "all"
                 st.session_state.page = 'lista'
                 st.rerun()
             
     with col_c2:
         with st.container(border=True):
             st.write("### 📡 In Corso")
-            st.write("Solo gli anime attualmente in onda.")
+            st.write("Solo gli anime stagionali e simulcast.")
             if st.button("VEDI I SIMULCAST", use_container_width=True, type="primary"):
-                st.session_state.filter = "airing" # Imposta filtro su in corso
+                st.session_state.filter = "airing"
                 st.session_state.page = 'lista'
                 st.rerun()
 
@@ -80,21 +80,27 @@ elif st.session_state.page == 'lista':
     
     st.divider()
 
-    # --- LOGICA DI FILTRAGGIO REALE ---
-    display_df = df.copy()
+    # --- LOGICA DI FILTRAGGIO AGGIORNATA ---
+    temp_df = df.copy()
     
     if st.session_state.filter == "airing":
-        # Cerchiamo la parola 'airing' (ignorando maiuscole/minuscole) nella colonna status
-        if 'status' in display_df.columns:
-            display_df = display_df[display_df['status'].str.contains('Currently Airing|Airing', case=False, na=False)]
-        st.title("📡 Anime In Corso")
+        st.title("📡 Anime attualmente in corso")
+        # Il trucco: cerchiamo "airing" o "releasing" o "ongoing" per beccarli tutti
+        if 'status' in temp_df.columns:
+            temp_df['status'] = temp_df['status'].astype(str).str.lower()
+            mask = temp_df['status'].str.contains('airing|releasing|ongoing', na=False)
+            display_df = temp_df[mask]
+        else:
+            # Se la colonna status manca, mostriamo solo una parte per sicurezza
+            display_df = temp_df.head(500)
     else:
         st.title("📚 Archivio Completo")
+        display_df = temp_df
 
-    # Ricerca e Ordinamento
-    row1_c1, row1_c2 = st.columns([3, 1])
-    search = row1_c1.text_input("Cerca anime...", placeholder="Es. Bleach...")
-    f_ordine = row1_c2.selectbox("Ordine:", ["A-Z", "Z-A"])
+    # Filtri Ricerca
+    c1, c2 = st.columns([3, 1])
+    search = c1.text_input("🔍 Cerca un titolo...", placeholder="Es. Solo Leveling")
+    f_ordine = c2.selectbox("Ordine:", ["A-Z", "Z-A"])
 
     if search:
         col_t = 'title' if 'title' in display_df.columns else display_df.columns[0]
@@ -108,4 +114,4 @@ elif st.session_state.page == 'lista':
     final_table.columns = [c.upper() for c in cols_to_show]
     
     st.dataframe(final_table, use_container_width=True, hide_index=True)
-    st.caption(f"Risultati: {len(final_table)}")
+    st.caption(f"Visualizzando {len(final_table)} anime")
