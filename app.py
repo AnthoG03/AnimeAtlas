@@ -1,62 +1,79 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
 
-st.set_page_config(page_title="Anime Complete Database", page_icon="⛩️", layout="wide")
+# 1. Configurazione estetica
+st.set_page_config(page_title="Anime Mega Database", page_icon="🚀", layout="wide")
 
-st.title("⛩️ Database Completo (Auto-Aggiornante)")
+# Un po' di stile per non renderlo troppo "base"
+st.markdown("""
+    <style>
+    .main { background-color: #f0f2f6; }
+    .stDataFrame { border: 2px solid #ff4b4b; border-radius: 10px; }
+    </style>
+    """, unsafe_allow_code=True)
+
+st.title("⛩️ Anime Mega Explorer")
+st.write("Unione di tutti i database di LeoRigasaki (AniList + MyAnimeList)")
 
 @st.cache_data(ttl=3600)
-def load_data_from_repo():
-    # 1. Otteniamo la data di oggi e ieri nel formato YYYYMMDD
-    oggi = datetime.now().strftime("%Y%m%d")
-    ieri = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
+def load_mega_data():
+    # Lista dei file principali per avere TUTTO l'archivio
+    # Questi sono i file "master" che contengono migliaia di titoli
+    urls = [
+        "https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/anilist_anime_data.csv",
+        "https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/jikan_anime_data.csv"
+    ]
     
-    date_da_provare = [oggi, ieri]
-    
-    # 2. Proviamo a caricare i diversi file stagionali che vediamo negli screenshot
-    for data_str in date_da_provare:
-        # Proviamo il file AniList Seasonal (il più completo)
-        url = f"https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/raw/anilist_seasonal_{data_str}.csv"
+    lista_df = []
+    for url in urls:
         try:
-            df = pd.read_csv(url)
-            return df, data_str, "AniList"
+            temp_df = pd.read_csv(url)
+            lista_df.append(temp_df)
         except:
-            # Se fallisce, proviamo quello di Jikan
-            url_jikan = f"https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/raw/jikan_seasonal_{data_str}.csv"
-            try:
-                df = pd.read_csv(url_jikan)
-                return df, data_str, "Jikan"
-            except:
-                continue
-                
-    return None, None, None
+            continue
+            
+    if not lista_df:
+        return None
+    
+    # Uniamo i file e togliamo i duplicati
+    full_df = pd.concat(lista_df, ignore_index=True)
+    
+    # Pulizia nomi colonne
+    full_df.columns = [str(c).strip().lower() for c in full_df.columns]
+    
+    # Rimuoviamo i doppioni basandoci sul titolo
+    if 'title' in full_df.columns:
+        full_df = full_df.drop_duplicates(subset=['title'])
+    
+    return full_df
 
-# Esecuzione del caricamento
-df, data_f, fonte = load_data_from_repo()
+df = load_mega_data()
 
 if df is not None:
-    st.success(f"✅ Dati caricati! Fonte: {fonte} | Data: {data_f}")
+    # --- SIDEBAR ---
+    st.sidebar.header("🔍 Cerca nel Database")
+    search = st.sidebar.text_input("Inserisci titolo (es. Naruto, Death Note):", "")
     
-    # Pulizia colonne
-    df.columns = [str(c).strip().lower() for c in df.columns]
-    
-    # Filtri
-    st.sidebar.header("🔍 Ricerca")
-    search = st.sidebar.text_input("Inserisci il nome di un anime:", "")
-    
-    # Identificazione colonna titolo
+    # Filtro Voto (se esiste la colonna score)
+    if 'score' in df.columns:
+        df['score'] = pd.to_numeric(df['score'], errors='coerce').fillna(0)
+        voto_min = st.sidebar.slider("Filtra per voto minimo:", 0.0, 10.0, 0.0)
+        df = df[df['score'] >= voto_min]
+
+    # --- FILTRO RICERCA ---
     col_titolo = 'title' if 'title' in df.columns else df.columns[0]
-    
     df_filtered = df[df[col_titolo].astype(str).str.contains(search, case=False, na=False)]
-    
-    # Visualizzazione Metriche
+
+    # --- CONTATORI ---
     c1, c2 = st.columns(2)
-    c1.metric("Totale Database", len(df))
-    c2.metric("Risultati Ricerca", len(df_filtered))
-    
-    # Tabella
+    with c1:
+        st.metric("📦 Totale Titoli Caricati", len(df))
+    with c2:
+        st.metric("🎯 Risultati Trovati", len(df_filtered))
+
+    # --- TABELLA ---
     st.dataframe(df_filtered, use_container_width=True)
+    
+    st.info(f"💡 Consiglio: Abbiamo unito più file per darti l'archivio completo. Se cerchi un classico, ora dovresti trovarlo!")
 else:
-    st.error("❌ Errore nel caricamento dei dati stagionali.")
-    st.info("I file nel repository di Leo potrebbero essere in fase di aggiornamento. Riprova tra pochi minuti.")
+    st.error("⚠️ Non sono riuscito a caricare i database principali. Il repository potrebbe aver cambiato struttura.")
