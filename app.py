@@ -36,6 +36,8 @@ def load_all_data():
     if not lista_df: return None
     full_df = pd.concat(lista_df, ignore_index=True)
     full_df.columns = [str(c).strip().lower() for c in full_df.columns]
+    
+    # Pulizia duplicati
     if 'title' in full_df.columns:
         full_df = full_df.drop_duplicates(subset=['title'])
     return full_df
@@ -46,11 +48,9 @@ df = load_all_data()
 
 if st.session_state.page == 'home':
     st.write("#")
-    c_title1, c_title2, c_title3 = st.columns([1, 3, 1])
-    with c_title2:
-        st.title("⛩️ AnimeAtlas")
-        st.markdown("### *Il tuo portale definitivo verso migliaia di storie.*")
-        st.write(f"Database: **{len(df) if df is not None else 0}** titoli.")
+    st.title("⛩️ AnimeAtlas")
+    st.markdown("### *Il tuo portale definitivo verso migliaia di storie.*")
+    st.write(f"Database totale: **{len(df) if df is not None else 0}** titoli.")
     
     st.write("#")
     col_c1, col_c2 = st.columns(2)
@@ -58,7 +58,6 @@ if st.session_state.page == 'home':
     with col_c1:
         with st.container(border=True):
             st.write("### 📚 Archivio Completo")
-            st.write("Esplora l'intero database globale.")
             if st.button("ACCEDI ALL'ARCHIVIO", use_container_width=True, type="primary"):
                 st.session_state.filter = "all"
                 st.session_state.page = 'lista'
@@ -67,7 +66,6 @@ if st.session_state.page == 'home':
     with col_c2:
         with st.container(border=True):
             st.write("### 📡 In Corso")
-            st.write("Solo gli anime stagionali e simulcast.")
             if st.button("VEDI I SIMULCAST", use_container_width=True, type="primary"):
                 st.session_state.filter = "airing"
                 st.session_state.page = 'lista'
@@ -78,40 +76,29 @@ elif st.session_state.page == 'lista':
         st.session_state.page = 'home'
         st.rerun()
     
-    st.divider()
-
-    # --- LOGICA DI FILTRAGGIO AGGIORNATA ---
-    temp_df = df.copy()
-    
+    # FILTRAGGIO MANUALE
     if st.session_state.filter == "airing":
-        st.title("📡 Anime attualmente in corso")
-        # Il trucco: cerchiamo "airing" o "releasing" o "ongoing" per beccarli tutti
-        if 'status' in temp_df.columns:
-            temp_df['status'] = temp_df['status'].astype(str).str.lower()
-            mask = temp_df['status'].str.contains('airing|releasing|ongoing', na=False)
-            display_df = temp_df[mask]
+        st.title("📡 Anime In Corso")
+        # Cerchiamo di capire che colonne abbiamo
+        if 'status' in df.columns:
+            # Filtro ultra-elastico: prende tutto ciò che NON è "Finished" o "Completed"
+            # Spesso è più facile escludere i finiti che trovare quelli in corso
+            non_finiti = df[~df['status'].astype(str).str.contains('Finished|Completed|Finished Airing', case=False, na=False)]
+            # Di questi, prendiamo quelli che danno idea di essere attivi
+            display_df = non_finiti[non_finiti['status'].astype(str).str.contains('Airing|Ongoing|Releasing|Currently', case=False, na=False)]
         else:
-            # Se la colonna status manca, mostriamo solo una parte per sicurezza
-            display_df = temp_df.head(500)
+            display_df = df.head(100) # Se non c'è la colonna, limitiamo per non mostrare 22k
     else:
         st.title("📚 Archivio Completo")
-        display_df = temp_df
+        display_df = df
 
-    # Filtri Ricerca
-    c1, c2 = st.columns([3, 1])
-    search = c1.text_input("🔍 Cerca un titolo...", placeholder="Es. Solo Leveling")
-    f_ordine = c2.selectbox("Ordine:", ["A-Z", "Z-A"])
-
+    # Ricerca
+    search = st.text_input("🔍 Cerca un titolo...")
     if search:
         col_t = 'title' if 'title' in display_df.columns else display_df.columns[0]
         display_df = display_df[display_df[col_t].astype(str).str.contains(search, case=False, na=False)]
-    
-    display_df = display_df.sort_values(by=display_df.columns[0], ascending=(f_ordine == "A-Z"))
 
-    # Tabella
-    cols_to_show = [c for c in ['title', 'type', 'episodes'] if c in display_df.columns]
-    final_table = display_df[cols_to_show]
-    final_table.columns = [c.upper() for c in cols_to_show]
-    
-    st.dataframe(final_table, use_container_width=True, hide_index=True)
-    st.caption(f"Visualizzando {len(final_table)} anime")
+    # Tabella finale
+    cols = [c for c in ['title', 'type', 'episodes'] if c in display_df.columns]
+    st.dataframe(display_df[cols], use_container_width=True, hide_index=True)
+    st.write(f"Risultati filtrati: {len(display_df)}")
