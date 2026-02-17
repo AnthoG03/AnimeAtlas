@@ -7,13 +7,12 @@ st.set_page_config(page_title="AnimeAtlas", page_icon="⛩️", layout="wide")
 
 if 'page' not in st.session_state:
     st.session_state.page = 'home'
+if 'filter' not in st.session_state:
+    st.session_state.filter = 'all'
 
-# 2. Motore di Caricamento (Il tuo codice collaudato)
+# 2. Motore di Caricamento
 @st.cache_data(ttl=3600)
 def load_all_data():
-    oggi = datetime.now().strftime("%Y%m%d")
-    ieri = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
-    date_da_provare = [oggi, ieri]
     urls = [
         "https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/raw/airing_anime.csv",
         "https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/anilist_anime_data.csv",
@@ -23,12 +22,13 @@ def load_all_data():
         "https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/raw/anilist_seasonal_{}.csv",
         "https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/raw/anime_seasonal_{}.csv"
     ]
+    oggi, ieri = datetime.now().strftime("%Y%m%d"), (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
     lista_df = []
     for url in urls:
         try: lista_df.append(pd.read_csv(url, on_bad_lines='skip'))
         except: continue
     for temp in templates_data:
-        for d in date_da_provare:
+        for d in [oggi, ieri]:
             try:
                 lista_df.append(pd.read_csv(temp.format(d), on_bad_lines='skip'))
                 break
@@ -45,94 +45,67 @@ df = load_all_data()
 # --- INTERFACCIA ---
 
 if st.session_state.page == 'home':
-    # Spaziatura iniziale
     st.write("#")
-    
-    # Area Titolo Centrale
     c_title1, c_title2, c_title3 = st.columns([1, 3, 1])
     with c_title2:
         st.title("⛩️ AnimeAtlas")
         st.markdown("### *Il tuo portale definitivo verso migliaia di storie.*")
-        st.write(f"Database sincronizzato con successo: **{len(df) if df is not None else 0}** titoli.")
+        st.write(f"Database: **{len(df) if df is not None else 0}** titoli.")
     
-    st.write("#") # Altro spazio
-    
-    # Pulsanti di Navigazione
+    st.write("#")
     col_c1, col_c2 = st.columns(2)
     
     with col_c1:
-        with st.container(border=True): # Crea una cornice intorno al pulsante
-            st.write("### 📚 Archivio Storico")
-            st.write("Esplora l'intero database globale.")
+        with st.container(border=True):
+            st.write("### 📚 Archivio Completo")
+            st.write("Tutti gli anime (Conclusi e storici).")
             if st.button("ACCEDI ALL'ARCHIVIO", use_container_width=True, type="primary"):
-                st.session_state.filter = "all"
+                st.session_state.filter = "all" # Imposta filtro su tutto
                 st.session_state.page = 'lista'
                 st.rerun()
             
     with col_c2:
         with st.container(border=True):
-            st.write("### 📡 Simulcast")
-            st.write("Scopri gli anime in onda ora.")
-            if st.button("GUARDA COSA C'È IN CORSO", use_container_width=True, type="primary"):
-                st.session_state.filter = "airing"
+            st.write("### 📡 In Corso")
+            st.write("Solo gli anime attualmente in onda.")
+            if st.button("VEDI I SIMULCAST", use_container_width=True, type="primary"):
+                st.session_state.filter = "airing" # Imposta filtro su in corso
                 st.session_state.page = 'lista'
                 st.rerun()
 
 elif st.session_state.page == 'lista':
-    # Barra superiore di navigazione
-    top_c1, top_c2 = st.columns([1, 4])
-    with top_c1:
-        if st.button("⬅️ Torna alla Home", use_container_width=True):
-            st.session_state.page = 'home'
-            st.rerun()
+    if st.button("⬅️ Torna alla Home"):
+        st.session_state.page = 'home'
+        st.rerun()
     
     st.divider()
 
-    # Filtriamo in base alla scelta
-    if st.session_state.filter == "airing":
-        if 'status' in df.columns:
-            display_df = df[df['status'].str.contains('airing', case=False, na=False)]
-        else:
-            display_df = df.head(1000)
-    else:
-        display_df = df
-
-    # Filtri di Ricerca
-    st.title("🔍 Esplora i titoli")
-    row1_c1, row1_c2, row1_c3 = st.columns([3, 1, 1])
+    # --- LOGICA DI FILTRAGGIO REALE ---
+    display_df = df.copy()
     
-    search = row1_c1.text_input("Cerca anime...", placeholder="Es. Bleach, One Piece...")
-    f_tipo = row1_c2.selectbox("Tipo:", ["Tutti", "TV", "Movie", "OVA"])
-    f_ordine = row1_c3.selectbox("Ordine:", ["A-Z", "Z-A"])
+    if st.session_state.filter == "airing":
+        # Cerchiamo la parola 'airing' (ignorando maiuscole/minuscole) nella colonna status
+        if 'status' in display_df.columns:
+            display_df = display_df[display_df['status'].str.contains('Currently Airing|Airing', case=False, na=False)]
+        st.title("📡 Anime In Corso")
+    else:
+        st.title("📚 Archivio Completo")
 
-    # Logica Filtri
+    # Ricerca e Ordinamento
+    row1_c1, row1_c2 = st.columns([3, 1])
+    search = row1_c1.text_input("Cerca anime...", placeholder="Es. Bleach...")
+    f_ordine = row1_c2.selectbox("Ordine:", ["A-Z", "Z-A"])
+
     if search:
         col_t = 'title' if 'title' in display_df.columns else display_df.columns[0]
         display_df = display_df[display_df[col_t].astype(str).str.contains(search, case=False, na=False)]
     
-    if f_tipo != "Tutti":
-        display_df = display_df[display_df['type'].str.contains(f_tipo, case=False, na=False)]
-    
     display_df = display_df.sort_values(by=display_df.columns[0], ascending=(f_ordine == "A-Z"))
 
     # Tabella
-    st.write("#")
-    cols_to_show = []
-    for c in ['title', 'type', 'episodes']:
-        if c in display_df.columns: cols_to_show.append(c)
-    
+    cols_to_show = [c for c in ['title', 'type', 'episodes'] if c in display_df.columns]
     final_table = display_df[cols_to_show]
     final_table.columns = [c.upper() for c in cols_to_show]
     
-    # Visualizzazione moderna
-    st.dataframe(
-        final_table, 
-        use_container_width=True, 
-        hide_index=True,
-        column_config={
-            "TITLE": "Titolo dell'Opera",
-            "TYPE": "Formato",
-            "EPISODES": st.column_config.NumberColumn("N° Episodi", format="%d")
-        }
-    )
-    st.caption(f"Risultati trovati: {len(final_table)}")
+    st.dataframe(final_table, use_container_width=True, hide_index=True)
+    st.caption(f"Risultati: {len(final_table)}")
