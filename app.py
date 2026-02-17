@@ -1,69 +1,86 @@
 import streamlit as st
 import pandas as pd
+from datetime import datetime, timedelta
 
-# Impostazione pagina semplice
-st.set_page_config(page_title="Anime Mega Database", layout="wide")
+st.set_page_config(page_title="Anime Mega Explorer", layout="wide")
 
-st.title("⛩️ Anime Mega Explorer")
-st.write("Caricamento dell'archivio completo...")
+st.title("⛩️ Anime Mega Database")
+st.write("Unione dei 4 database di LeoRigasaki (Airing + Seasonal)")
 
 @st.cache_data(ttl=3600)
-def load_mega_data():
-    # Puntiamo ai file master che contengono tutto l'archivio
-    urls = [
-        "https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/anilist_anime_data.csv",
-        "https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/jikan_anime_data.csv"
+def load_all_data():
+    oggi = datetime.now().strftime("%Y%m%d")
+    ieri = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
+    date_da_provare = [oggi, ieri]
+    
+    # 1. Link fisso
+    urls_fisso = [
+        "https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/raw/airing_anime.csv"
+    ]
+    
+    # 2. Template per i link con data
+    templates_data = [
+        "https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/raw/anilist_seasonal_{}.csv",
+        "https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/raw/anime_seasonal_{}.csv",
+        "https://raw.githubusercontent.com/LeoRigasaki/Anime-dataset/main/data/raw/jikan_seasonal_{}.csv"
     ]
     
     lista_df = []
-    for url in urls:
+    
+    # Carichiamo il file fisso
+    for url in urls_fisso:
         try:
-            # Carichiamo il file
-            temp_df = pd.read_csv(url, on_bad_lines='skip')
-            lista_df.append(temp_df)
+            df_temp = pd.read_csv(url)
+            lista_df.append(df_temp)
         except:
             continue
             
+    # Carichiamo i file con data (prova oggi, se fallisce prova ieri)
+    for temp in templates_data:
+        caricato = False
+        for d in date_da_provare:
+            if caricato: break
+            try:
+                url_dinamico = temp.format(d)
+                df_temp = pd.read_csv(url_dinamico)
+                lista_df.append(df_temp)
+                caricato = True
+            except:
+                continue
+                
     if not lista_df:
         return None
-    
-    # Uniamo i file
+        
+    # Unione di tutti i file trovati
     full_df = pd.concat(lista_df, ignore_index=True)
     
-    # Pulizia nomi colonne: tutto minuscolo e senza spazi
+    # Pulizia standard
     full_df.columns = [str(c).strip().lower() for c in full_df.columns]
-    
-    # Rimuoviamo i duplicati basandoci sul titolo
     if 'title' in full_df.columns:
         full_df = full_df.drop_duplicates(subset=['title'])
-    
+    elif 'name' in full_df.columns:
+        full_df = full_df.drop_duplicates(subset=['name'])
+        
     return full_df
 
 # Esecuzione
-df = load_mega_data()
+df = load_all_data()
 
 if df is not None:
-    # Barra laterale semplice
-    st.sidebar.header("Filtri")
-    search = st.sidebar.text_input("Cerca anime (es. Dragon Ball):", "")
-
-    # Cerchiamo la colonna del titolo
-    col_titolo = 'title' if 'title' in df.columns else df.columns[0]
+    st.sidebar.header("🔍 Filtri")
+    search = st.sidebar.text_input("Cerca titolo:", "")
     
-    # Applichiamo la ricerca
-    df_filtered = df[df[col_titolo].astype(str).str.contains(search, case=False, na=False)]
-
-    # Filtro Voto se presente
-    if 'score' in df.columns:
-        df['score'] = pd.to_numeric(df['score'], errors='coerce').fillna(0)
-        voto = st.sidebar.slider("Voto minimo:", 0.0, 10.0, 0.0)
-        df_filtered = df_filtered[df_filtered['score'] >= voto]
-
-    # Metriche
-    st.success(f"Database caricato con successo!")
-    st.metric("Totale Titoli", len(df_filtered))
+    # Identifica colonna titolo
+    col_titolo = 'title' if 'title' in df.columns else (df.columns[0] if len(df.columns)>0 else None)
     
-    # Tabella
+    if col_titolo:
+        df_filtered = df[df[col_titolo].astype(str).str.contains(search, case=False, na=False)]
+    else:
+        df_filtered = df
+
+    # Metriche e Tabella
+    st.success(f"Database pronto! Abbiamo unito i file disponibili.")
+    st.metric("Totale Anime trovati", len(df_filtered))
     st.dataframe(df_filtered, use_container_width=True)
 else:
-    st.error("Errore nel caricamento. Controlla che i file nel repository siano accessibili.")
+    st.error("⚠️ Non sono riuscito a recuperare nessuno dei 4 file. Controlla i permessi del repository.")
